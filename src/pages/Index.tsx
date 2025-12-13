@@ -2,10 +2,12 @@ import { Header } from '@/components/journal/Header';
 import { Sidebar } from '@/components/journal/Sidebar';
 import { Editor } from '@/components/journal/Editor';
 import { useJournal } from '@/hooks/useJournal';
+import { JourneyInsights } from '@/components/journal/JourneyInsights';
 
 const Index = () => {
   const {
     entries,
+    allEntries,
     selectedEntry,
     selectedId,
     setSelectedId,
@@ -33,27 +35,30 @@ const Index = () => {
       />
       
       <main className="px-4 pb-8 md:px-8">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 lg:gap-6">
-          <Sidebar
-            entries={entries}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onCreate={createEntry}
-            onDelete={deleteEntry}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            filterMood={filterMood}
-            onFilterMoodChange={setFilterMood}
-            filterTag={filterTag}
-            onFilterTagChange={setFilterTag}
-            allTags={allTags}
-          />
-          
-          <Editor
-            entry={selectedEntry}
-            onUpdate={updateEntry}
-            onCreate={createEntry}
-          />
+        <div className="max-w-6xl mx-auto space-y-4">
+          <JourneyInsights stats={stats} entries={allEntries} />
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 lg:gap-6">
+            <Sidebar
+              entries={entries}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onCreate={createEntry}
+              onDelete={deleteEntry}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              filterMood={filterMood}
+              onFilterMoodChange={setFilterMood}
+              filterTag={filterTag}
+              onFilterTagChange={setFilterTag}
+              allTags={allTags}
+            />
+            
+            <Editor
+              entry={selectedEntry}
+              onUpdate={updateEntry}
+              onCreate={createEntry}
+            />
+          </div>
         </div>
       </main>
     </div>

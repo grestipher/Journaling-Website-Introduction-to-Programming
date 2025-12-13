@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { PenLine, X, Plus, Check } from 'lucide-react';
+import { PenLine, X, Plus, Check, RefreshCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface EditorProps {
@@ -24,6 +24,19 @@ const moodEmojis: Record<Mood, string> = {
 
 const moods: Mood[] = ['happy', 'calm', 'sad', 'anxious', 'excited', 'grateful'];
 
+const prompts = [
+  'Describe a small moment today that made you smile.',
+  'What is something you are proud of from this week?',
+  'Write a letter to your future self five years from now.',
+  'How did your body feel today? What might it be telling you?',
+  'List three things you are grateful for and why.',
+  'What would you tell a friend who felt the same way you do now?',
+  'Capture the soundtrack of your day—what did you hear?',
+  'If today had a theme, what would it be and why?'
+];
+
+const WORD_GOAL = 250;
+
 export function Editor({ entry, onUpdate, onCreate }: EditorProps) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -32,6 +45,7 @@ export function Editor({ entry, onUpdate, onCreate }: EditorProps) {
   const [newTag, setNewTag] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [promptIndex, setPromptIndex] = useState(() => Math.floor(Math.random() * prompts.length));
 
   // Sync state with entry
   useEffect(() => {
@@ -48,6 +62,7 @@ export function Editor({ entry, onUpdate, onCreate }: EditorProps) {
     }
     setShowTagInput(false);
     setNewTag('');
+    setPromptIndex(Math.floor(Math.random() * prompts.length));
   }, [entry?.id]);
 
   // Auto-save with debounce
@@ -81,6 +96,18 @@ export function Editor({ entry, onUpdate, onCreate }: EditorProps) {
     setTags(prev => prev.filter(t => t !== tagToRemove));
   }, []);
 
+  const activePrompt = prompts[promptIndex];
+  const shufflePrompt = useCallback(() => {
+    setPromptIndex(prev => {
+      const next = Math.floor(Math.random() * prompts.length);
+      return next === prev ? (next + 1) % prompts.length : next;
+    });
+  }, []);
+
+  const insertPrompt = useCallback(() => {
+    setBody(prev => (prev ? `${prev}\n\n${activePrompt}` : activePrompt));
+  }, [activePrompt]);
+
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString(undefined, {
       weekday: 'long',
@@ -96,6 +123,9 @@ export function Editor({ entry, onUpdate, onCreate }: EditorProps) {
       minute: '2-digit'
     });
   };
+
+  const bodyWordCount = body.trim().split(/\s+/).filter(Boolean).length;
+  const progress = Math.min(100, Math.round((bodyWordCount / WORD_GOAL) * 100));
 
   if (!entry) {
     return (
@@ -169,6 +199,36 @@ export function Editor({ entry, onUpdate, onCreate }: EditorProps) {
         </div>
       </div>
 
+      {/* Inspiration prompt */}
+      <div className="mb-4 p-4 rounded-2xl bg-secondary/40 border border-border/40">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+            Need inspiration?
+          </p>
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-3 text-muted-foreground"
+              onClick={shufflePrompt}
+            >
+              <RefreshCcw className="w-3.5 h-3.5 mr-1" />
+              Shuffle
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 px-3 gap-1.5"
+              variant="secondary"
+              onClick={insertPrompt}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Use prompt
+            </Button>
+          </div>
+        </div>
+        <p className="text-sm text-muted-foreground/90 leading-relaxed">{activePrompt}</p>
+      </div>
+
       {/* Title */}
       <Input
         value={title}
@@ -184,6 +244,20 @@ export function Editor({ entry, onUpdate, onCreate }: EditorProps) {
         placeholder="Write your thoughts here..."
         className="flex-1 min-h-[250px] resize-none bg-transparent border-none px-0 mt-2 focus-visible:ring-0 text-foreground/90 leading-relaxed placeholder:text-muted-foreground/50"
       />
+
+      {/* Word goal */}
+      <div className="mt-4">
+        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+          <span>Word goal</span>
+          <span>{bodyWordCount}/{WORD_GOAL}</span>
+        </div>
+        <div className="h-2 rounded-full bg-secondary/60 overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-primary via-accent to-primary transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
 
       {/* Tags & Footer */}
       <div className="mt-4 pt-4 border-t border-border/50">
@@ -233,7 +307,7 @@ export function Editor({ entry, onUpdate, onCreate }: EditorProps) {
           )}
           
           <span className="ml-auto text-xs text-muted-foreground">
-            {body.trim().split(/\s+/).filter(Boolean).length} words
+            {bodyWordCount} words
           </span>
         </div>
       </div>
