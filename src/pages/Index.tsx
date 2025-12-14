@@ -1,9 +1,15 @@
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/journal/Header';
 import { Sidebar } from '@/components/journal/Sidebar';
 import { Editor } from '@/components/journal/Editor';
 import { useJournal } from '@/hooks/useJournal';
+import { useAuth } from '@/hooks/useAuth';
 
 const Index = () => {
+  const { user, loading: authLoading, signOut } = useAuth();
+  const navigate = useNavigate();
+
   const {
     entries,
     selectedEntry,
@@ -17,6 +23,7 @@ const Index = () => {
     setFilterTag,
     allTags,
     stats,
+    loading,
     createEntry,
     updateEntry,
     deleteEntry,
@@ -24,12 +31,31 @@ const Index = () => {
     importData
   } = useJournal();
 
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate('/auth');
+    }
+  }, [user, authLoading, navigate]);
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen">
       <Header 
         stats={stats} 
         onExport={exportData} 
-        onImport={importData} 
+        onImport={importData}
+        onSignOut={signOut}
       />
       
       <main className="px-4 pb-8 md:px-8">
