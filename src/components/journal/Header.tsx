@@ -1,4 +1,4 @@
-import { BookOpen, Download, Upload, BarChart3 } from 'lucide-react';
+import { BookOpen, Download, Upload, BarChart3, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { JournalStats } from '@/types/journal';
 import {
@@ -15,9 +15,10 @@ interface HeaderProps {
   stats: JournalStats;
   onExport: () => void;
   onImport: (file: File) => Promise<number>;
+  onSignOut?: () => Promise<{ error: Error | null }>;
 }
 
-export function Header({ stats, onExport, onImport }: HeaderProps) {
+export function Header({ stats, onExport, onImport, onSignOut }: HeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImportClick = () => {
@@ -42,6 +43,12 @@ export function Header({ stats, onExport, onImport }: HeaderProps) {
       });
     }
     e.target.value = '';
+  };
+
+  const handleSignOut = async () => {
+    if (onSignOut) {
+      await onSignOut();
+    }
   };
 
   const moodEmojis: Record<string, string> = {
@@ -124,6 +131,13 @@ export function Header({ stats, onExport, onImport }: HeaderProps) {
               className="hidden"
               onChange={handleFileChange}
             />
+
+            {onSignOut && (
+              <Button variant="ghost" size="sm" className="gap-2" onClick={handleSignOut}>
+                <LogOut className="w-4 h-4" />
+                <span className="hidden sm:inline">Sign Out</span>
+              </Button>
+            )}
           </div>
         </div>
       </div>
