@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { JournalEntry, JournalStats, Mood } from '@/types/journal';
+import { supabase } from '@/lib/supabase';
 
 const STORAGE_KEY = 'journal-entries';
+const TABLE_NAME = 'journal_entries';
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -69,11 +71,66 @@ export function useJournal() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMood, setFilterMood] = useState<Mood | null>(null);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [syncingCount, setSyncingCount] = useState(0);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const isSyncing = syncingCount > 0;
+
+  const startSync = useCallback(() => {
+    setSyncingCount(count => count + 1);
+  }, []);
+
+  const endSync = useCallback(() => {
+    setSyncingCount(count => Math.max(0, count - 1));
+  }, []);
+
+  const hydrateEntry = useCallback((entry: Partial<JournalEntry>): JournalEntry => {
+    const safeBody = entry.body ?? '';
+    return {
+      id: entry.id ?? generateId(),
+      title: entry.title ?? '',
+      body: safeBody,
+      mood: entry.mood as Mood | undefined,
+      tags: Array.isArray(entry.tags) ? entry.tags.map(tag => String(tag)) : [],
+      createdAt: entry.createdAt ?? Date.now(),
+      updatedAt: entry.updatedAt ?? entry.createdAt ?? Date.now(),
+      wordCount: entry.wordCount ?? countWords(safeBody)
+    };
+  }, []);
+
+  const sortEntries = useCallback((list: JournalEntry[]) => {
+    return [...list].sort((a, b) => b.createdAt - a.createdAt);
+  }, []);
+
+  const refreshEntries = useCallback(async () => {
+    if (!supabase) return;
+    startSync();
+    try {
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .select('*')
+        .order('createdAt', { ascending: false });
+      if (error) throw error;
+      setEntries(sortEntries((data ?? []).map(hydrateEntry)));
+      setSyncError(null);
+    } catch (err) {
+      console.error('[Supabase] Failed to fetch entries', err);
+      setSyncError('Unable to sync with Supabase. Showing cached entries.');
+    } finally {
+      endSync();
+    }
+  }, [endSync, hydrateEntry, sortEntries, startSync, setSyncError]);
 
   // Persist to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
   }, [entries]);
+
+  // Initial remote sync
+  useEffect(() => {
+    if (!supabase) return;
+    refreshEntries();
+  }, [refreshEntries]);
 
   const createEntry = useCallback(() => {
     const newEntry: JournalEntry = {
@@ -85,30 +142,86 @@ export function useJournal() {
       updatedAt: Date.now(),
       wordCount: 0
     };
-    setEntries(prev => [newEntry, ...prev]);
+    setEntries(prev => sortEntries([newEntry, ...prev]));
     setSelectedId(newEntry.id);
+
+    if (supabase) {
+      startSync();
+      supabase
+        .from(TABLE_NAME)
+        .insert(newEntry)
+        .then(({ error }) => {
+          if (error) {
+            console.error('[Supabase] Failed to create entry', error);
+            setSyncError('Failed to save entry to Supabase.');
+          } else {
+            setSyncError(null);
+          }
+        })
+        .finally(() => endSync());
+    }
+
     return newEntry;
-  }, []);
+  }, [endSync, setSelectedId, sortEntries, startSync, setSyncError]);
 
   const updateEntry = useCallback((id: string, updates: Partial<Omit<JournalEntry, 'id' | 'createdAt'>>) => {
-    setEntries(prev => prev.map(entry => {
-      if (entry.id !== id) return entry;
-      const newBody = updates.body ?? entry.body;
-      return {
-        ...entry,
-        ...updates,
-        wordCount: countWords(newBody),
-        updatedAt: Date.now()
-      };
-    }));
-  }, []);
+    let updatedEntry: JournalEntry | null = null;
+    setEntries(prev => {
+      const mapped = prev.map(entry => {
+        if (entry.id !== id) return entry;
+        const newBody = updates.body ?? entry.body;
+        updatedEntry = {
+          ...entry,
+          ...updates,
+          wordCount: countWords(newBody),
+          updatedAt: Date.now()
+        };
+        return updatedEntry;
+      });
+      return sortEntries(mapped);
+    });
+
+    if (supabase && updatedEntry) {
+      startSync();
+      supabase
+        .from(TABLE_NAME)
+        .update(updatedEntry)
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) {
+            console.error('[Supabase] Failed to update entry', error);
+            setSyncError('Failed to update entry on Supabase.');
+          } else {
+            setSyncError(null);
+          }
+        })
+        .finally(() => endSync());
+    }
+  }, [endSync, sortEntries, startSync, setSyncError]);
 
   const deleteEntry = useCallback((id: string) => {
     setEntries(prev => prev.filter(e => e.id !== id));
     if (selectedId === id) {
       setSelectedId(null);
     }
-  }, [selectedId]);
+
+    if (supabase) {
+      startSync();
+      supabase
+        .from(TABLE_NAME)
+        .delete()
+        .eq('id', id)
+        .then(({ error }) => {
+          if (error) {
+            console.error('[Supabase] Failed to delete entry', error);
+            setSyncError('Failed to delete entry on Supabase.');
+          } else {
+            setSyncError(null);
+          }
+        })
+        .finally(() => endSync());
+    }
+  }, [endSync, selectedId, setSelectedId, startSync, setSyncError]);
 
   const selectedEntry = entries.find(e => e.id === selectedId) ?? null;
 
@@ -147,25 +260,36 @@ export function useJournal() {
   const importData = useCallback((file: File) => {
     return new Promise<number>((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           const imported = JSON.parse(e.target?.result as string) as JournalEntry[];
           if (!Array.isArray(imported)) {
             throw new Error('Invalid format');
           }
-          // Merge with existing, avoiding duplicates by id
+          const hydrated = imported.map(hydrateEntry);
           const existingIds = new Set(entries.map(e => e.id));
-          const newEntries = imported.filter(e => !existingIds.has(e.id));
-          setEntries(prev => [...newEntries, ...prev].sort((a, b) => b.createdAt - a.createdAt));
+          const newEntries = hydrated.filter(e => !existingIds.has(e.id));
+          if (supabase && hydrated.length > 0) {
+            startSync();
+            try {
+              const { error } = await supabase
+                .from(TABLE_NAME)
+                .upsert(hydrated, { onConflict: 'id' });
+              if (error) throw error;
+            } finally {
+              endSync();
+            }
+          }
+          setEntries(prev => sortEntries([...newEntries, ...prev]));
           resolve(newEntries.length);
-        } catch {
-          reject(new Error('Invalid file format'));
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error('Invalid file format'));
         }
       };
       reader.onerror = () => reject(new Error('Failed to read file'));
       reader.readAsText(file);
     });
-  }, [entries]);
+  }, [entries, endSync, hydrateEntry, sortEntries, startSync]);
 
   return {
     entries: filteredEntries,
@@ -185,6 +309,9 @@ export function useJournal() {
     updateEntry,
     deleteEntry,
     exportData,
-    importData
+    importData,
+    refreshEntries,
+    syncError,
+    isSyncing
   };
 }

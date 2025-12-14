@@ -59,6 +59,32 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
+- Supabase (optional, for cloud persistence)
+
+## Supabase setup
+
+The journal now knows how to talk to Supabase. To enable it:
+
+1. Create a Supabase project and a table called `journal_entries` with the following columns:
+   - `id`: `text`, primary key
+   - `title`: `text`
+   - `body`: `text`
+   - `mood`: `text`, nullable
+   - `tags`: `text[]`, defaults to `{}` (empty array)
+   - `createdAt`: `bigint`
+   - `updatedAt`: `bigint`
+   - `wordCount`: `int`
+2. Enable Row Level Security on the table and create a policy that allows read/write for your desired audience (typically `auth.uid() IS NOT NULL` for authenticated users or a service role if you are just testing).
+3. Copy your project URL and anonymous key into a `.env` file (or your deployment environment):
+
+   ```bash
+   VITE_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
+   VITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
+   ```
+
+4. Restart `npm run dev` so Vite picks up the new env vars.
+
+When the env vars are missing the app gracefully falls back to the existing local storage behavior, so you can keep journaling offline while you finish configuring Supabase.
 
 ## How can I deploy this project?
 
